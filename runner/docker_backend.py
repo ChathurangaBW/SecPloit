@@ -125,7 +125,7 @@ class DockerWorkspaceBackend:
             cmd=[
                 "/bin/bash",
                 "-lc",
-                r"""find /workspace -type f -printf '%P	%s	%T@
+                r"""find /workspace -type f -printf '%P\t%s\t%T@
 ' 2>/dev/null | sort""",
             ],
             user="1000:1000",
@@ -202,7 +202,28 @@ class DockerWorkspaceBackend:
     @staticmethod
     def tools() -> list[str]:
         return [
-            "bash", "python3", "gcc", "gdb", "radare2", "binwalk", "checksec",
-            "strace", "nmap", "nikto", "ffuf", "gobuster", "sqlmap", "semgrep",
-            "curl", "openssl", "dig", "nslookup", "whois", "netcat", "git", "jq",
+            "bash",
+            "python3",
+            "gcc",
+            "gdb",
+            "radare2",
+            "binwalk",
+            "checksec",
+            "strace",
+            "nmap",
+            "nikto",
+            "ffuf",
+            "gobuster",
+            "sqlmap",
+            "semgrep",
+            "secploit-browser",
+            "chromium",
+            "curl",
+            "openssl",
+            "dig",
+            "nslookup",
+            "whois",
+            "netcat",
+            "git",
+            "jq",
         ]

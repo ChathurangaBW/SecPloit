@@ -1,0 +1,14 @@
+[
+  {
+    "name": "juice-shop-surface-and-validation",
+    "target": "http://juice-shop:3000",
+    "objective": "Map the web and API attack surface, select the highest-value hypotheses, and validate only findings supported by reproducible evidence.",
+    "max_steps": 24
+  },
+  {
+    "name": "dvwa-auth-and-input-boundaries",
+    "target": "http://dvwa",
+    "objective": "Assess authentication, authorization, session handling, and input-processing boundaries. Separate confirmed findings from configuration observations and scanner-only hypotheses.",
+    "max_steps": 24
+  }
+]
