@@ -3,12 +3,13 @@ FROM kalilinux/kali-rolling
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    SECPLOIT_CHROMIUM_PATH=/usr/bin/chromium
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash binutils binwalk build-essential checksec coreutils curl dnsutils file findutils \
-    ffuf gdb git gobuster iproute2 jq netcat-openbsd nikto nmap openssl procps python3 \
-    python3-pip radare2 sqlmap strace tcpdump tini whois \
+    bash binutils binwalk build-essential checksec chromium coreutils curl dnsutils file findutils \
+    ffuf fonts-liberation gdb git gobuster iproute2 jq netcat-openbsd nikto nmap openssl procps \
+    python3 python3-pip radare2 sqlmap strace tcpdump tini whois \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/secploit
