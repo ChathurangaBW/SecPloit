@@ -126,7 +126,8 @@ jobs:
             http://127.0.0.1:8000/health >/tmp/secploit-health.json
           cat /tmp/secploit-health.json
           docker compose ps
-          docker compose exec -T control python - <<'PY'
+          docker run --rm -i --network secploit-range \
+            --entrypoint python secploit-control:latest - <<'PY'
           import time
 
           import httpx
@@ -142,7 +143,7 @@ jobs:
                   except Exception as exc:
                       errors.append(f"{target}: {type(exc).__name__}: {exc}")
               if not errors:
-                  print("Private-range services are reachable from the control network")
+                  print("Private-range services are reachable from an isolated range container")
                   break
               print(f"Range readiness attempt {attempt + 1}: {'; '.join(errors)}")
               time.sleep(5)
