@@ -120,15 +120,35 @@ jobs:
         run: docker compose build --pull control runner
       - name: Start control plane, runner, and private range
         run: docker compose --profile range up -d --no-build
-      - name: Wait for services
+      - name: Wait for control plane and private range
         run: |
           curl --fail --silent --show-error --retry 40 --retry-delay 5 --retry-all-errors \
             http://127.0.0.1:8000/health >/tmp/secploit-health.json
-          curl --fail --silent --show-error --retry 40 --retry-delay 5 --retry-all-errors \
-            http://127.0.0.1:3000/ >/dev/null
-          curl --fail --silent --show-error --retry 40 --retry-delay 5 --retry-all-errors \
-            http://127.0.0.1:8081/ >/dev/null
           cat /tmp/secploit-health.json
+          docker compose ps
+          docker compose exec -T control python - <<'PY'
+          import time
+
+          import httpx
+
+          targets = ("http://juice-shop:3000", "http://dvwa")
+          errors: list[str] = []
+          for attempt in range(40):
+              errors.clear()
+              for target in targets:
+                  try:
+                      response = httpx.get(target, timeout=10.0, follow_redirects=True)
+                      response.raise_for_status()
+                  except Exception as exc:
+                      errors.append(f"{target}: {type(exc).__name__}: {exc}")
+              if not errors:
+                  print("Private-range services are reachable from the control network")
+                  break
+              print(f"Range readiness attempt {attempt + 1}: {'; '.join(errors)}")
+              time.sleep(5)
+          else:
+              raise SystemExit("Private-range readiness failed: " + "; ".join(errors))
+          PY
       - name: Run end-to-end control-plane smoke test
         run: python scripts/qa_smoke.py --base-url http://127.0.0.1:8000
       - name: Inspect container security configuration
