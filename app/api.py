@@ -25,7 +25,7 @@ policy = Policy(settings)
 runner = RunnerClient(settings)
 orchestrator = Orchestrator(store=store, config=settings, runner=runner, policy=policy)
 
-app = FastAPI(title=settings.app_name, version="3.0.0")
+app = FastAPI(title=settings.app_name, version="3.0.1")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 _tasks: set[asyncio.Task[None]] = set()
 
@@ -55,9 +55,10 @@ def index() -> FileResponse:
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "3.0.0",
+        "version": "3.0.1",
         "model": settings.openai_model,
         "critic_model": settings.critic_model,
+        "reasoning_mode": settings.openai_reasoning_mode,
         "reasoning_effort": settings.openai_reasoning_effort,
         "operator_reasoning_effort": settings.openai_operator_reasoning_effort,
         "critic_reasoning_effort": settings.openai_critic_reasoning_effort,
@@ -70,7 +71,7 @@ def health() -> dict[str, Any]:
 def capabilities() -> dict[str, Any]:
     active_profiles = SCOUT_PROFILES[: settings.planning_agents]
     return {
-        "version": "3.0.0",
+        "version": "3.0.1",
         "workflow": [
             "parallel_specialists",
             "lead_planner",
@@ -81,6 +82,7 @@ def capabilities() -> dict[str, Any]:
         ],
         "specialists": [role for role, _ in active_profiles],
         "reasoning": {
+            "mode": settings.openai_reasoning_mode,
             "planner_and_specialists": settings.openai_reasoning_effort,
             "operator": settings.openai_operator_reasoning_effort,
             "reviewer_auditor_reporter": settings.openai_critic_reasoning_effort,

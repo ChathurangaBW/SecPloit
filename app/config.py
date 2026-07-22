@@ -7,7 +7,8 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+ReasoningMode = Literal["standard", "pro"]
 
 
 class Settings(BaseSettings):
@@ -33,6 +34,10 @@ class Settings(BaseSettings):
     openai_critic_reasoning_effort: ReasoningEffort = Field(
         default="high",
         alias="OPENAI_CRITIC_REASONING_EFFORT",
+    )
+    openai_reasoning_mode: ReasoningMode = Field(
+        default="standard",
+        alias="OPENAI_REASONING_MODE",
     )
     openai_max_output_tokens: int = Field(
         default=24000,
@@ -103,6 +108,16 @@ class Settings(BaseSettings):
         if role in {"review", "report", "report_audit"}:
             return self.openai_critic_reasoning_effort
         return self.openai_reasoning_effort
+
+    def reasoning_options_for(
+        self,
+        role: str,
+        effort: ReasoningEffort | None = None,
+    ) -> dict[str, str]:
+        options = {"effort": effort or self.reasoning_effort_for(role)}
+        if self.openai_reasoning_mode == "pro":
+            options["mode"] = "pro"
+        return options
 
 
 @lru_cache

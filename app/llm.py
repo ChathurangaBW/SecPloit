@@ -60,7 +60,6 @@ class OpenAIResponsesLLM:
         effort: ReasoningEffort | None = None,
     ) -> SchemaT:
         schema_name = f"secploit_{role}"[:64]
-        selected_effort = effort or self.config.reasoning_effort_for(role)
         previous_raw = ""
 
         for attempt in range(2):
@@ -82,7 +81,7 @@ class OpenAIResponsesLLM:
                 "model": model,
                 "instructions": attempt_instructions,
                 "input": json.dumps(attempt_payload, ensure_ascii=False),
-                "reasoning": {"effort": selected_effort},
+                "reasoning": self.config.reasoning_options_for(role, effort),
                 "max_output_tokens": self.config.openai_max_output_tokens,
                 "store": self.config.openai_store_responses,
                 "text": {
@@ -124,12 +123,11 @@ class OpenAIResponsesLLM:
         payload: dict[str, Any],
         effort: ReasoningEffort | None = None,
     ) -> str:
-        selected_effort = effort or self.config.reasoning_effort_for(role)
         request: dict[str, Any] = {
             "model": model,
             "instructions": instructions,
             "input": json.dumps(payload, ensure_ascii=False),
-            "reasoning": {"effort": selected_effort},
+            "reasoning": self.config.reasoning_options_for(role, effort),
             "max_output_tokens": self.config.openai_max_output_tokens,
             "store": self.config.openai_store_responses,
         }
