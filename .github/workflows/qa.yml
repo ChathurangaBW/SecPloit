@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: qa-${{ github.workflow }}-${{ github.ref }}
@@ -25,9 +25,20 @@ jobs:
           cache: pip
       - name: Install development dependencies
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
-      - name: Generate Ruff repair patch
+      - name: Apply deterministic Ruff repairs
         run: |
           ruff check . --fix --unsafe-fixes || true
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/llm.py")
+          source = path.read_text(encoding="utf-8")
+          old = '''            except Exception:\n                if attempt == 1:\n                    raise RuntimeError(\n                        f"{role} returned invalid structured output: {previous_raw[:1000]}"\n                    )\n'''
+          new = '''            except Exception as exc:\n                if attempt == 1:\n                    raise RuntimeError(\n                        f"{role} returned invalid structured output: {previous_raw[:1000]}"\n                    ) from exc\n'''
+          if old in source:
+              path.write_text(source.replace(old, new), encoding="utf-8")
+          PY
+          ruff check .
           git diff -- app runner benchmarks scripts scanner.py > ruff-fixes.patch
       - name: Upload Ruff repair patch
         uses: actions/upload-artifact@v4
@@ -35,8 +46,16 @@ jobs:
           name: ruff-fixes
           path: ruff-fixes.patch
           if-no-files-found: error
-      - name: Enforce Ruff after repairs
-        run: ruff check .
+      - name: Commit repairs to feature branch
+        if: github.event_name == 'push' && github.ref_name != 'main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app runner benchmarks scripts scanner.py
+          if ! git diff --cached --quiet; then
+            git commit -m "style: apply Ruff repairs"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
       - name: Compile all Python modules
         run: python -m compileall -q app runner scripts scanner.py
 
