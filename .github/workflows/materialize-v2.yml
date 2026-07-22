@@ -1,0 +1,34 @@
+name: materialize-secploit-v2
+
+on:
+  push:
+    branches: ["feat/secploit-v2-range-agent"]
+    paths:
+      - ".secploit-bootstrap/**"
+      - "tools/materialize_v2.py"
+      - ".github/workflows/materialize-v2.yml"
+      - ".secploit-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/secploit-v2-range-agent
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Materialize project
+        run: python tools/materialize_v2.py
+      - name: Commit generated project
+        run: |
+          git config user.name "SecPloit Builder"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: build SecPloit v2 autonomous range agent"
+          git push origin HEAD:feat/secploit-v2-range-agent
