@@ -27,15 +27,16 @@ jobs:
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
       - name: Generate Ruff repair patch
         run: |
-          ruff check . --fix --unsafe-fixes
+          ruff check . --fix --unsafe-fixes || true
           git diff -- app runner benchmarks scripts scanner.py > ruff-fixes.patch
-          ruff check .
       - name: Upload Ruff repair patch
         uses: actions/upload-artifact@v4
         with:
           name: ruff-fixes
           path: ruff-fixes.patch
           if-no-files-found: error
+      - name: Enforce Ruff after repairs
+        run: ruff check .
       - name: Compile all Python modules
         run: python -m compileall -q app runner scripts scanner.py
 
