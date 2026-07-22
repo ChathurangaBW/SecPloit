@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose a bounded capability or engineering improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the engineering or research-workflow limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Include APIs, data model, worker capability, UX, or operational changes.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Acceptance criteria and evidence
+      description: Define tests, metrics, and observable behavior that prove completion.
+    validations:
+      required: true
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Security-boundary impact
+      description: Explain how the change preserves private-range isolation, authorization, resource limits, and evidence review.
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: This proposal is for owned or explicitly authorized private-range use.
+          required: true
+        - label: This proposal does not require destructive behavior, persistence, denial of service, credential theft, or host escape.
+          required: true
