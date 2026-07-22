@@ -8,7 +8,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.models import Event, Finding, Job, JobStatus, new_id, utc_now
+from app.models import (
+    Campaign,
+    CampaignCreate,
+    CampaignStatus,
+    Event,
+    Experiment,
+    ExperimentCreate,
+    ExperimentKind,
+    ExperimentStatus,
+    Finding,
+    Job,
+    JobStatus,
+    new_id,
+    utc_now,
+)
 
 
 class Store:
@@ -74,6 +88,51 @@ class Store:
 
                 CREATE INDEX IF NOT EXISTS idx_findings_job
                 ON findings(job_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS campaigns (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    objective TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    max_parallel INTEGER NOT NULL,
+                    max_experiments INTEGER NOT NULL,
+                    metadata TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_campaigns_status_updated
+                ON campaigns(status, updated_at);
+
+                CREATE TABLE IF NOT EXISTS experiments (
+                    id TEXT PRIMARY KEY,
+                    campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    objective TEXT NOT NULL,
+                    hypothesis TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    parent_ids TEXT NOT NULL,
+                    required_capabilities TEXT NOT NULL,
+                    priority INTEGER NOT NULL,
+                    max_attempts INTEGER NOT NULL,
+                    attempt INTEGER NOT NULL DEFAULT 0,
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    checkpoint TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    result TEXT NOT NULL,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_experiments_campaign_status_priority
+                ON experiments(campaign_id, status, priority DESC, created_at ASC);
+
+                CREATE INDEX IF NOT EXISTS idx_experiments_lease
+                ON experiments(status, lease_expires_at);
                 """
             )
 
@@ -269,6 +328,218 @@ class Store:
             ).fetchall()
         return [self._finding(row) for row in rows]
 
+    def create_campaign(self, payload: CampaignCreate) -> Campaign:
+        now = utc_now()
+        campaign = Campaign(
+            id=new_id("campaign"),
+            name=payload.name,
+            target=payload.target,
+            objective=payload.objective,
+            status=CampaignStatus.draft,
+            max_parallel=payload.max_parallel,
+            max_experiments=payload.max_experiments,
+            metadata=payload.metadata,
+            created_at=now,
+            updated_at=now,
+        )
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO campaigns (
+                    id, name, target, objective, status, max_parallel,
+                    max_experiments, metadata, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    campaign.id,
+                    campaign.name,
+                    campaign.target,
+                    campaign.objective,
+                    campaign.status.value,
+                    campaign.max_parallel,
+                    campaign.max_experiments,
+                    json.dumps(campaign.metadata, ensure_ascii=False),
+                    now.isoformat(),
+                    now.isoformat(),
+                ),
+            )
+        return campaign
+
+    def get_campaign(self, campaign_id: str) -> Campaign | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM campaigns WHERE id = ?",
+                (campaign_id,),
+            ).fetchone()
+        return self._campaign(row) if row else None
+
+    def list_campaigns(self, limit: int = 100) -> list[Campaign]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM campaigns ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._campaign(row) for row in rows]
+
+    def update_campaign_status(
+        self,
+        campaign_id: str,
+        status: CampaignStatus,
+    ) -> Campaign:
+        now = utc_now().isoformat()
+        with self.connect() as db:
+            cursor = db.execute(
+                "UPDATE campaigns SET status = ?, updated_at = ? WHERE id = ?",
+                (status.value, now, campaign_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(campaign_id)
+        campaign = self.get_campaign(campaign_id)
+        if campaign is None:
+            raise KeyError(campaign_id)
+        return campaign
+
+    def create_experiment(
+        self,
+        campaign_id: str,
+        payload: ExperimentCreate,
+        status: ExperimentStatus,
+    ) -> Experiment:
+        now = utc_now()
+        experiment = Experiment(
+            id=new_id("exp"),
+            campaign_id=campaign_id,
+            title=payload.title,
+            kind=payload.kind,
+            objective=payload.objective,
+            hypothesis=payload.hypothesis,
+            status=status,
+            parent_ids=payload.parent_ids,
+            required_capabilities=payload.required_capabilities,
+            priority=payload.priority,
+            max_attempts=payload.max_attempts,
+            attempt=0,
+            checkpoint={},
+            payload=payload.payload,
+            result={},
+            created_at=now,
+            updated_at=now,
+        )
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO experiments (
+                    id, campaign_id, title, kind, objective, hypothesis, status,
+                    parent_ids, required_capabilities, priority, max_attempts,
+                    attempt, lease_owner, lease_expires_at, checkpoint, payload,
+                    result, error, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    experiment.id,
+                    experiment.campaign_id,
+                    experiment.title,
+                    experiment.kind.value,
+                    experiment.objective,
+                    experiment.hypothesis,
+                    experiment.status.value,
+                    json.dumps(experiment.parent_ids),
+                    json.dumps(experiment.required_capabilities),
+                    experiment.priority,
+                    experiment.max_attempts,
+                    experiment.attempt,
+                    None,
+                    None,
+                    "{}",
+                    json.dumps(experiment.payload, ensure_ascii=False),
+                    "{}",
+                    None,
+                    now.isoformat(),
+                    now.isoformat(),
+                ),
+            )
+        return experiment
+
+    def get_experiment(self, experiment_id: str) -> Experiment | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM experiments WHERE id = ?",
+                (experiment_id,),
+            ).fetchone()
+        return self._experiment(row) if row else None
+
+    def list_experiments(self, campaign_id: str) -> list[Experiment]:
+        with self.connect() as db:
+            rows = db.execute(
+                """
+                SELECT * FROM experiments
+                WHERE campaign_id = ?
+                ORDER BY priority DESC, created_at ASC
+                """,
+                (campaign_id,),
+            ).fetchall()
+        return [self._experiment(row) for row in rows]
+
+    def count_experiments(self, campaign_id: str) -> int:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS n FROM experiments WHERE campaign_id = ?",
+                (campaign_id,),
+            ).fetchone()
+        return int(row["n"])
+
+    def update_experiment(self, experiment_id: str, **fields: Any) -> Experiment:
+        allowed = {
+            "status",
+            "attempt",
+            "lease_owner",
+            "lease_expires_at",
+            "checkpoint",
+            "result",
+            "error",
+        }
+        unknown = set(fields) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported experiment fields: {sorted(unknown)}")
+
+        normalized: dict[str, Any] = {}
+        for key, value in fields.items():
+            if isinstance(value, ExperimentStatus):
+                value = value.value
+            elif isinstance(value, datetime):
+                value = value.isoformat()
+            elif key in {"checkpoint", "result"}:
+                value = json.dumps(value or {}, ensure_ascii=False)
+            normalized[key] = value
+        normalized["updated_at"] = utc_now().isoformat()
+
+        assignments = ", ".join(f"{key} = ?" for key in normalized)
+        values = list(normalized.values()) + [experiment_id]
+        with self.connect() as db:
+            cursor = db.execute(
+                f"UPDATE experiments SET {assignments} WHERE id = ?",
+                values,
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(experiment_id)
+        experiment = self.get_experiment(experiment_id)
+        if experiment is None:
+            raise KeyError(experiment_id)
+        return experiment
+
+    def campaign_status_counts(self, campaign_id: str) -> dict[str, int]:
+        with self.connect() as db:
+            rows = db.execute(
+                """
+                SELECT status, COUNT(*) AS n
+                FROM experiments
+                WHERE campaign_id = ?
+                GROUP BY status
+                """,
+                (campaign_id,),
+            ).fetchall()
+        return {row["status"]: int(row["n"]) for row in rows}
+
     @staticmethod
     def _job(row: sqlite3.Row) -> Job:
         return Job(
@@ -310,4 +581,49 @@ class Store:
             evidence=row["evidence"],
             remediation=row["remediation"],
             created_at=datetime.fromisoformat(row["created_at"]),
+        )
+
+    @staticmethod
+    def _campaign(row: sqlite3.Row) -> Campaign:
+        return Campaign(
+            id=row["id"],
+            name=row["name"],
+            target=row["target"],
+            objective=row["objective"],
+            status=CampaignStatus(row["status"]),
+            max_parallel=row["max_parallel"],
+            max_experiments=row["max_experiments"],
+            metadata=json.loads(row["metadata"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+        )
+
+    @staticmethod
+    def _experiment(row: sqlite3.Row) -> Experiment:
+        lease_expires_at = (
+            datetime.fromisoformat(row["lease_expires_at"])
+            if row["lease_expires_at"]
+            else None
+        )
+        return Experiment(
+            id=row["id"],
+            campaign_id=row["campaign_id"],
+            title=row["title"],
+            kind=ExperimentKind(row["kind"]),
+            objective=row["objective"],
+            hypothesis=row["hypothesis"],
+            status=ExperimentStatus(row["status"]),
+            parent_ids=json.loads(row["parent_ids"]),
+            required_capabilities=json.loads(row["required_capabilities"]),
+            priority=row["priority"],
+            max_attempts=row["max_attempts"],
+            attempt=row["attempt"],
+            lease_owner=row["lease_owner"],
+            lease_expires_at=lease_expires_at,
+            checkpoint=json.loads(row["checkpoint"]),
+            payload=json.loads(row["payload"]),
+            result=json.loads(row["result"]),
+            error=row["error"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
         )

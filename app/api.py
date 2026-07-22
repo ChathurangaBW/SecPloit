@@ -8,8 +8,19 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.campaigns import CampaignError, CampaignService, LeaseConflict
 from app.config import settings
-from app.models import JobCreate
+from app.evaluation import score_ground_truth
+from app.models import (
+    CampaignCreate,
+    EvaluationInput,
+    ExperimentComplete,
+    ExperimentCreate,
+    ExperimentFail,
+    ExperimentHeartbeat,
+    ExperimentLeaseRequest,
+    JobCreate,
+)
 from app.orchestrator import Orchestrator, SCOUT_PROFILES
 from app.policy import Policy, PolicyError
 from app.runner_client import RunnerClient
@@ -24,8 +35,9 @@ store.initialize()
 policy = Policy(settings)
 runner = RunnerClient(settings)
 orchestrator = Orchestrator(store=store, config=settings, runner=runner, policy=policy)
+campaigns = CampaignService(store)
 
-app = FastAPI(title=settings.app_name, version="3.0.1")
+app = FastAPI(title=settings.app_name, version="4.0.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 _tasks: set[asyncio.Task[None]] = set()
 
@@ -33,7 +45,22 @@ _tasks: set[asyncio.Task[None]] = set()
 def serialize(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {key: serialize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [serialize(item) for item in value]
     return value
+
+
+def campaign_call(function, *args):
+    try:
+        return function(*args)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Campaign or experiment not found") from exc
+    except LeaseConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CampaignError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def run_job(job_id: str) -> None:
@@ -55,7 +82,7 @@ def index() -> FileResponse:
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "3.0.1",
+        "version": "4.0.0",
         "model": settings.openai_model,
         "critic_model": settings.critic_model,
         "reasoning_mode": settings.openai_reasoning_mode,
@@ -64,6 +91,7 @@ def health() -> dict[str, Any]:
         "critic_reasoning_effort": settings.openai_critic_reasoning_effort,
         "planning_agents": settings.planning_agents,
         "runner": settings.runner_url,
+        "campaign_engine": True,
     }
 
 
@@ -71,7 +99,7 @@ def health() -> dict[str, Any]:
 def capabilities() -> dict[str, Any]:
     active_profiles = SCOUT_PROFILES[: settings.planning_agents]
     return {
-        "version": "3.0.1",
+        "version": "4.0.0",
         "workflow": [
             "parallel_specialists",
             "lead_planner",
@@ -79,6 +107,10 @@ def capabilities() -> dict[str, Any]:
             "step_reviewer",
             "final_evidence_auditor",
             "reporter",
+            "durable_campaign_graph",
+            "distributed_worker_leases",
+            "checkpointed_experiments",
+            "ground_truth_scoring",
         ],
         "specialists": [role for role, _ in active_profiles],
         "reasoning": {
@@ -95,6 +127,13 @@ def capabilities() -> dict[str, Any]:
             "host_path_mounts": False,
             "browser_evidence": True,
             "general_shell": True,
+        },
+        "campaigns": {
+            "dependency_graph": True,
+            "resumable_checkpoints": True,
+            "worker_capability_routing": True,
+            "lease_expiry_recovery": True,
+            "bounded_parallelism": True,
         },
     }
 
@@ -149,3 +188,98 @@ def list_artifacts(job_id: str) -> dict[str, Any]:
         return {"artifacts": runner.list_artifacts(job.workspace_id)}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Runner error: {exc}") from exc
+
+
+@app.post("/api/campaigns", status_code=201)
+def create_campaign(payload: CampaignCreate) -> dict[str, Any]:
+    try:
+        policy.validate_target(payload.target)
+    except PolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"campaign": serialize(campaigns.create_campaign(payload))}
+
+
+@app.get("/api/campaigns")
+def list_campaigns() -> dict[str, Any]:
+    return {"campaigns": serialize(store.list_campaigns())}
+
+
+@app.get("/api/campaigns/{campaign_id}")
+def get_campaign(campaign_id: str) -> dict[str, Any]:
+    return serialize(campaign_call(campaigns.summary, campaign_id))
+
+
+@app.get("/api/campaigns/{campaign_id}/graph")
+def get_campaign_graph(campaign_id: str) -> dict[str, Any]:
+    return serialize(campaign_call(campaigns.graph, campaign_id))
+
+
+@app.post("/api/campaigns/{campaign_id}/activate")
+def activate_campaign(campaign_id: str) -> dict[str, Any]:
+    return {"campaign": serialize(campaign_call(campaigns.activate, campaign_id))}
+
+
+@app.post("/api/campaigns/{campaign_id}/pause")
+def pause_campaign(campaign_id: str) -> dict[str, Any]:
+    return {"campaign": serialize(campaign_call(campaigns.pause, campaign_id))}
+
+
+@app.post("/api/campaigns/{campaign_id}/cancel")
+def cancel_campaign(campaign_id: str) -> dict[str, Any]:
+    return {"campaign": serialize(campaign_call(campaigns.cancel, campaign_id))}
+
+
+@app.post("/api/campaigns/{campaign_id}/experiments", status_code=201)
+def create_experiment(campaign_id: str, payload: ExperimentCreate) -> dict[str, Any]:
+    experiment = campaign_call(campaigns.add_experiment, campaign_id, payload)
+    return {"experiment": serialize(experiment)}
+
+
+@app.post("/api/campaigns/{campaign_id}/lease")
+def lease_experiment(
+    campaign_id: str,
+    payload: ExperimentLeaseRequest,
+) -> dict[str, Any]:
+    experiment = campaign_call(campaigns.lease_next, campaign_id, payload)
+    return {"experiment": serialize(experiment) if experiment else None}
+
+
+@app.post("/api/experiments/{experiment_id}/heartbeat")
+def heartbeat_experiment(
+    experiment_id: str,
+    payload: ExperimentHeartbeat,
+) -> dict[str, Any]:
+    return {
+        "experiment": serialize(
+            campaign_call(campaigns.heartbeat, experiment_id, payload)
+        )
+    }
+
+
+@app.post("/api/experiments/{experiment_id}/complete")
+def complete_experiment(
+    experiment_id: str,
+    payload: ExperimentComplete,
+) -> dict[str, Any]:
+    return {
+        "experiment": serialize(
+            campaign_call(campaigns.complete, experiment_id, payload)
+        )
+    }
+
+
+@app.post("/api/experiments/{experiment_id}/fail")
+def fail_experiment(
+    experiment_id: str,
+    payload: ExperimentFail,
+) -> dict[str, Any]:
+    return {
+        "experiment": serialize(
+            campaign_call(campaigns.fail, experiment_id, payload)
+        )
+    }
+
+
+@app.post("/api/evaluations/ground-truth")
+def evaluate_ground_truth(payload: EvaluationInput) -> dict[str, Any]:
+    return score_ground_truth(payload)
