@@ -59,7 +59,7 @@ def health() -> dict[str, str]:
 
 
 @app.post("/api/jobs", status_code=202)
-def create_job(payload: JobCreate) -> dict[str, Any]:
+async def create_job(payload: JobCreate) -> dict[str, Any]:
     try:
         policy.validate_target(payload.target)
     except PolicyError as exc:
