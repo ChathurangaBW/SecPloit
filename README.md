@@ -11,6 +11,7 @@ hypotheses, and continue until it has reproducible evidence.
 ## SecPloit v3
 
 - Role-specific OpenAI reasoning effort, set to `high` by default
+- Optional GPT-5.6 `max` reasoning and `pro` execution mode
 - Parallel specialist planning committee
 - Lead-plan synthesis across web, network, code/binary, authentication, and skeptical-review views
 - General shell inside a persistent per-engagement Kali workspace
@@ -87,11 +88,25 @@ Set at least:
 ```dotenv
 OPENAI_API_KEY=your-key
 OPENAI_MODEL=gpt-5.6
+OPENAI_REASONING_MODE=standard
 OPENAI_REASONING_EFFORT=high
 OPENAI_OPERATOR_REASONING_EFFORT=high
 OPENAI_CRITIC_REASONING_EFFORT=high
 SECPLOIT_PLANNING_AGENTS=4
 ```
+
+For a quality-first run using the highest supported GPT-5.6 reasoning configuration:
+
+```dotenv
+OPENAI_REASONING_MODE=pro
+OPENAI_REASONING_EFFORT=max
+OPENAI_OPERATOR_REASONING_EFFORT=max
+OPENAI_CRITIC_REASONING_EFFORT=max
+OPENAI_MAX_OUTPUT_TOKENS=64000
+```
+
+The quality-first profile increases model work, latency, and cost. Benchmark it against the default
+`high` profile instead of assuming it is better for every engagement.
 
 Then start the control plane, runner, and bundled range:
 
@@ -100,6 +115,12 @@ docker compose --profile range up --build
 ```
 
 Open `http://localhost:8000`.
+
+Inspect the effective model, reasoning, specialist, and workspace configuration:
+
+```bash
+curl -sS http://localhost:8000/api/capabilities | jq
+```
 
 Bundled targets:
 
@@ -151,6 +172,7 @@ curl -sS http://localhost:8000/api/jobs \
 
 Important endpoints:
 
+- `GET /api/capabilities`
 - `POST /api/jobs`
 - `GET /api/jobs`
 - `GET /api/jobs/{job_id}`
@@ -179,9 +201,10 @@ review.
 |---|---:|---|
 | `OPENAI_MODEL` | `gpt-5.6` | Planner, specialist, and operator model |
 | `OPENAI_CRITIC_MODEL` | same as main model | Reviewer, auditor, and reporter model |
-| `OPENAI_REASONING_EFFORT` | `high` | Specialist and planner reasoning effort |
-| `OPENAI_OPERATOR_REASONING_EFFORT` | `high` | Operator reasoning effort |
-| `OPENAI_CRITIC_REASONING_EFFORT` | `high` | Reviewer/auditor/report reasoning effort |
+| `OPENAI_REASONING_MODE` | `standard` | `standard` or quality-first `pro` mode |
+| `OPENAI_REASONING_EFFORT` | `high` | Specialist and planner effort, through `max` |
+| `OPENAI_OPERATOR_REASONING_EFFORT` | `high` | Operator effort, through `max` |
+| `OPENAI_CRITIC_REASONING_EFFORT` | `high` | Reviewer/auditor/report effort, through `max` |
 | `OPENAI_MAX_OUTPUT_TOKENS` | `24000` | Per-model-call output ceiling |
 | `OPENAI_STORE_RESPONSES` | `false` | Whether OpenAI stores API responses |
 | `SECPLOIT_PLANNING_AGENTS` | `4` | Concurrent planning specialists, 1-8 |
