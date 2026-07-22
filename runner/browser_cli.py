@@ -163,7 +163,6 @@ def crawl(
     with sync_playwright() as playwright:
         browser, context = new_context(playwright, timeout_ms)
         try:
-            page = context.new_page()
             while queue and len(visited) < max_pages:
                 current, depth = queue.popleft()
                 current = urldefrag(current)[0]
@@ -171,6 +170,7 @@ def crawl(
                     continue
                 visited.add(current)
                 network: list[dict[str, Any]] = []
+                page = context.new_page()
                 attach_network_capture(page, network)
 
                 record: dict[str, Any] = {"requested_url": current, "depth": depth}
@@ -197,6 +197,8 @@ def crawl(
                                 queue.append((candidate, depth + 1))
                 except Exception as exc:
                     record["error"] = f"{type(exc).__name__}: {exc}"
+                finally:
+                    page.close()
                 pages.append(record)
 
             result = {
