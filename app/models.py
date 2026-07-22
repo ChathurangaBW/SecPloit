@@ -75,6 +75,15 @@ class Hypothesis(BaseModel):
     priority: Literal["low", "medium", "high"] = "medium"
 
 
+class SpecialistAssessment(BaseModel):
+    role: str
+    summary: str
+    hypotheses: list[Hypothesis] = Field(default_factory=list, max_length=10)
+    recommended_actions: list[str] = Field(default_factory=list, max_length=10)
+    evidence_requirements: list[str] = Field(default_factory=list, max_length=10)
+    caveats: list[str] = Field(default_factory=list, max_length=8)
+
+
 class ResearchPlan(BaseModel):
     summary: str
     hypotheses: list[Hypothesis] = Field(default_factory=list, max_length=12)
@@ -104,3 +113,10 @@ class StepReview(BaseModel):
     findings: list[ReviewedFinding] = Field(default_factory=list, max_length=10)
     next_focus: str
     should_stop: bool = False
+
+
+class ReportAudit(BaseModel):
+    summary: str
+    accepted_finding_titles: list[str] = Field(default_factory=list, max_length=50)
+    rejected_finding_titles: list[str] = Field(default_factory=list, max_length=50)
+    material_caveats: list[str] = Field(default_factory=list, max_length=20)
