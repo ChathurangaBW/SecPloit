@@ -2,225 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Security Research Agent</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #090d12;
-      color: #e7edf4;
-    }
-
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #172231 0, #090d12 46%); }
-    header { padding: 28px clamp(20px, 5vw, 64px) 10px; }
-    h1 { margin: 0; font-size: clamp(28px, 4vw, 44px); letter-spacing: -0.04em; }
-    header p { color: #9fafbf; max-width: 850px; line-height: 1.6; }
-    main { display: grid; grid-template-columns: minmax(320px, 0.85fr) minmax(420px, 1.4fr); gap: 18px; padding: 18px clamp(20px, 5vw, 64px) 48px; }
-    .panel { background: rgba(14, 21, 30, 0.92); border: 1px solid #263446; border-radius: 16px; padding: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
-    .panel h2 { margin-top: 0; font-size: 18px; }
-    label { display: block; color: #a9b7c7; font-size: 13px; margin: 16px 0 7px; }
-    input, textarea { width: 100%; background: #080c11; color: #edf5ff; border: 1px solid #33445a; border-radius: 9px; padding: 11px 12px; font: inherit; }
-    textarea { min-height: 122px; resize: vertical; }
-    input:focus, textarea:focus { outline: 2px solid #5688c7; outline-offset: 1px; }
-    button { margin-top: 16px; border: 0; border-radius: 9px; padding: 11px 16px; font-weight: 700; cursor: pointer; background: #dcecff; color: #07101a; }
-    button:disabled { opacity: .55; cursor: wait; }
-    .notice { margin-top: 16px; color: #91a0b0; font-size: 12px; line-height: 1.5; }
-    .jobs { display: grid; gap: 9px; max-height: 260px; overflow: auto; }
-    .job { border: 1px solid #29394d; border-radius: 10px; padding: 11px; cursor: pointer; background: #0b1118; }
-    .job:hover, .job.active { border-color: #75a7e8; }
-    .job strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .meta { color: #8798aa; font-size: 12px; margin-top: 5px; display: flex; justify-content: space-between; gap: 10px; }
-    .status { text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
-    .events { display: grid; gap: 11px; max-height: 520px; overflow: auto; }
-    .event { border-left: 3px solid #4a6585; padding: 9px 12px; background: #0a1017; border-radius: 0 9px 9px 0; }
-    .event h3 { margin: 0 0 5px; font-size: 13px; }
-    .event p { margin: 0; color: #aebdcd; font-size: 13px; line-height: 1.45; }
-    pre { margin: 8px 0 0; padding: 10px; max-height: 240px; overflow: auto; background: #05080c; border-radius: 7px; color: #bfcee0; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
-    .report { margin-top: 16px; white-space: pre-wrap; line-height: 1.55; color: #d9e4ef; }
-    .error { color: #ff9e9e; margin-top: 12px; }
-    .empty { color: #8090a0; padding: 22px 0; text-align: center; }
-
-    @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; }
-    }
-  </style>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SecPloit</title>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header>
-    <h1>Autonomous Security Research Agent</h1>
-    <p>Launch evidence-driven assessments against targets configured in the server allowlist. The agent chooses and executes read-only reconnaissance steps autonomously.</p>
+    <div>
+      <p class="eyebrow">AUTONOMOUS RANGE RESEARCH</p>
+      <h1>SecPloit</h1>
+    </div>
+    <div id="health" class="health">connecting</div>
   </header>
 
   <main>
-    <section class="panel">
-      <h2>New assessment</h2>
+    <section class="panel new-job">
+      <h2>New engagement</h2>
       <form id="job-form">
-        <label for="target">Target</label>
-        <input id="target" name="target" placeholder="https://app.lab.internal" required>
-
-        <label for="objective">Objective</label>
-        <textarea id="objective" name="objective" required>Assess the exposed HTTP, TLS, DNS, and service surface. Report only evidence-supported findings.</textarea>
-
-        <label for="max-steps">Maximum steps</label>
-        <input id="max-steps" name="max_steps" type="number" min="1" max="40" value="12" required>
-
-        <button id="submit" type="submit">Start autonomous job</button>
-        <div id="form-error" class="error"></div>
+        <label>Target
+          <input id="target" value="http://juice-shop:3000" required>
+        </label>
+        <label>Objective
+          <textarea id="objective" required>Map the attack surface and validate high-confidence web vulnerabilities with reproducible evidence.</textarea>
+        </label>
+        <label>Step budget
+          <input id="steps" type="number" min="1" max="200" value="20">
+        </label>
+        <button type="submit">Launch autonomous assessment</button>
       </form>
-      <p class="notice">This interface does not bypass server policy. Add owned or lab hosts to <code>TARGET_ALLOWLIST</code> before starting a job.</p>
-
-      <h2 style="margin-top: 28px">Jobs</h2>
-      <div id="jobs" class="jobs"><div class="empty">No jobs yet</div></div>
+      <p id="form-error" class="error"></p>
     </section>
 
-    <section class="panel">
-      <h2>Evidence stream</h2>
-      <div id="selection" class="empty">Select or create a job</div>
-      <div id="job-view" hidden>
-        <div id="job-meta" class="meta"></div>
-        <div id="job-error" class="error"></div>
-        <div id="events" class="events"></div>
-        <div id="report" class="report"></div>
+    <section class="panel jobs">
+      <div class="section-title">
+        <h2>Engagements</h2>
+        <button id="refresh" class="secondary">Refresh</button>
       </div>
+      <div id="job-list"></div>
+    </section>
+
+    <section class="panel detail">
+      <div class="section-title">
+        <h2>Live research trace</h2>
+        <button id="cancel" class="danger" disabled>Cancel</button>
+      </div>
+      <div id="job-summary" class="muted">Select an engagement.</div>
+      <div id="findings"></div>
+      <div id="events" class="events"></div>
+      <article id="report" class="report"></article>
     </section>
   </main>
 
-  <script>
-    const form = document.querySelector('#job-form');
-    const submit = document.querySelector('#submit');
-    const jobsNode = document.querySelector('#jobs');
-    const eventsNode = document.querySelector('#events');
-    const reportNode = document.querySelector('#report');
-    const jobMetaNode = document.querySelector('#job-meta');
-    const jobErrorNode = document.querySelector('#job-error');
-    const formErrorNode = document.querySelector('#form-error');
-    const selectionNode = document.querySelector('#selection');
-    const jobViewNode = document.querySelector('#job-view');
-
-    let selectedJobId = null;
-    let pollTimer = null;
-
-    function escapeHtml(value) {
-      return String(value)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-    }
-
-    async function request(url, options = {}) {
-      const response = await fetch(url, options);
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(body.detail || `Request failed: ${response.status}`);
-      }
-      return body;
-    }
-
-    async function refreshJobs() {
-      const body = await request('/api/jobs');
-      const jobs = body.jobs || [];
-      if (!jobs.length) {
-        jobsNode.innerHTML = '<div class="empty">No jobs yet</div>';
-        return;
-      }
-
-      jobsNode.innerHTML = jobs.map(job => `
-        <article class="job ${job.id === selectedJobId ? 'active' : ''}" data-id="${escapeHtml(job.id)}">
-          <strong>${escapeHtml(job.target)}</strong>
-          <div class="meta">
-            <span class="status">${escapeHtml(job.status)}</span>
-            <span>step ${job.current_step}/${job.max_steps}</span>
-          </div>
-        </article>
-      `).join('');
-
-      document.querySelectorAll('.job').forEach(node => {
-        node.addEventListener('click', () => selectJob(node.dataset.id));
-      });
-    }
-
-    function renderEvent(event) {
-      const data = event.data || {};
-      let detail = '';
-      if (data.command) detail += `Command: ${data.command}\n`;
-      if (data.stdout) detail += `\nSTDOUT\n${data.stdout}`;
-      if (data.stderr) detail += `\nSTDERR\n${data.stderr}`;
-      if (data.policy_error) detail += `\nPolicy: ${data.policy_error}`;
-
-      return `
-        <article class="event">
-          <h3>Step ${event.step} · ${escapeHtml(event.kind)}</h3>
-          <p>${escapeHtml(event.message)}</p>
-          ${detail ? `<pre>${escapeHtml(detail.trim())}</pre>` : ''}
-        </article>
-      `;
-    }
-
-    async function refreshSelectedJob() {
-      if (!selectedJobId) return;
-      const body = await request(`/api/jobs/${selectedJobId}`);
-      const job = body.job;
-      const events = body.events || [];
-
-      selectionNode.hidden = true;
-      jobViewNode.hidden = false;
-      jobMetaNode.innerHTML = `<span>${escapeHtml(job.target)}</span><span class="status">${escapeHtml(job.status)} · step ${job.current_step}/${job.max_steps}</span>`;
-      jobErrorNode.textContent = job.error || '';
-      eventsNode.innerHTML = events.length ? events.map(renderEvent).join('') : '<div class="empty">Waiting for the first agent action</div>';
-      reportNode.textContent = job.report ? `Final report\n\n${job.report}` : '';
-
-      if (['completed', 'failed'].includes(job.status)) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-      }
-    }
-
-    async function selectJob(jobId) {
-      selectedJobId = jobId;
-      await Promise.all([refreshJobs(), refreshSelectedJob()]);
-      if (!pollTimer) {
-        pollTimer = setInterval(async () => {
-          try {
-            await Promise.all([refreshJobs(), refreshSelectedJob()]);
-          } catch (error) {
-            console.error(error);
-          }
-        }, 2000);
-      }
-    }
-
-    form.addEventListener('submit', async event => {
-      event.preventDefault();
-      submit.disabled = true;
-      formErrorNode.textContent = '';
-
-      const payload = {
-        target: form.target.value.trim(),
-        objective: form.objective.value.trim(),
-        max_steps: Number(form.max_steps.value),
-      };
-
-      try {
-        const body = await request('/api/jobs', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        await selectJob(body.job.id);
-      } catch (error) {
-        formErrorNode.textContent = error.message;
-      } finally {
-        submit.disabled = false;
-      }
-    });
-
-    refreshJobs().catch(error => {
-      jobsNode.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
-    });
-  </script>
+  <script src="/static/app.js"></script>
 </body>
 </html>

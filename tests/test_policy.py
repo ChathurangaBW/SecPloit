@@ -1,74 +1,69 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from app.config import Settings
 from app.policy import Policy, PolicyError
 
 
-def make_policy() -> Policy:
-    config = Settings(
-        target_allowlist="127.0.0.1,app.lab.internal,*.range.local",
-        command_allowlist="curl,nmap,dig,grep,cat",
-        database_path=Path("data/test.db"),
-        workspace_root=Path("data/test-workspaces"),
-    )
-    return Policy(config)
-
-
-def test_accepts_exact_and_wildcard_targets() -> None:
-    policy = make_policy()
-
-    assert policy.validate_target("https://app.lab.internal").host == "app.lab.internal"
-    assert policy.validate_target("node.range.local").host == "node.range.local"
-
-
-def test_rejects_out_of_scope_target() -> None:
-    policy = make_policy()
-
-    with pytest.raises(PolicyError, match="outside TARGET_ALLOWLIST"):
-        policy.validate_target("example.com")
-
-
-def test_network_command_must_reference_job_target() -> None:
-    policy = make_policy()
-    target = policy.validate_target("app.lab.internal")
-
-    with pytest.raises(PolicyError, match="reference the job target"):
-        policy.validate_command("nmap -sV example.com", target)
-
-
-def test_rejects_shell_chaining() -> None:
-    policy = make_policy()
-    target = policy.validate_target("app.lab.internal")
-
-    with pytest.raises(PolicyError, match="Shell construct"):
-        policy.validate_command("curl https://app.lab.internal && id", target)
-
-
-def test_rejects_write_oriented_curl() -> None:
-    policy = make_policy()
-    target = policy.validate_target("app.lab.internal")
-
-    with pytest.raises(PolicyError, match="blocked"):
-        policy.validate_command(
-            "curl -X POST https://app.lab.internal/login",
-            target,
+def policy() -> Policy:
+    return Policy(
+        Settings(
+            OPENAI_API_KEY="test",
+            SECPLOIT_TARGET_ALLOWLIST="juice-shop,dvwa,localhost,127.0.0.1,*.lab.internal",
         )
+    )
 
 
-def test_accepts_read_only_commands() -> None:
-    policy = make_policy()
-    target = policy.validate_target("app.lab.internal")
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://juice-shop:3000",
+        "dvwa",
+        "localhost:8000",
+        "127.0.0.1",
+        "api.lab.internal",
+    ],
+)
+def test_allows_range_targets(target: str) -> None:
+    assert policy().validate_target(target).host
 
-    assert policy.validate_command(
-        "curl -I https://app.lab.internal",
-        target,
-    ) == ["curl", "-I", "https://app.lab.internal"]
 
-    assert policy.validate_command(
-        "nmap -sV app.lab.internal",
-        target,
-    ) == ["nmap", "-sV", "app.lab.internal"]
+@pytest.mark.parametrize(
+    "target",
+    ["example.com", "8.8.8.8", "169.254.169.254", "lab.internal"],
+)
+def test_rejects_out_of_scope_targets(target: str) -> None:
+    with pytest.raises(PolicyError):
+        policy().validate_target(target)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "docker ps",
+        "cat /var/run/docker.sock",
+        "nsenter -t 1 -m sh",
+        "curl http://169.254.169.254/latest/meta-data",
+        "mount /dev/sda /mnt",
+        "shutdown -h now",
+        "rm -rf /",
+    ],
+)
+def test_blocks_host_escape_and_destructive_commands(command: str) -> None:
+    with pytest.raises(PolicyError):
+        policy().validate_command(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "nmap -sV juice-shop",
+        "python3 - <<'PY'\nprint('research')\nPY",
+        "curl -sS http://dvwa | tee response.html",
+        "semgrep scan --config auto /workspace/source",
+        "gcc poc.c -o poc && ./poc",
+    ],
+)
+def test_allows_general_range_research(command: str) -> None:
+    assert policy().validate_command(command) == command

@@ -1,141 +1,108 @@
-# Autonomous Security Research Agent
+# SecPloit
 
-A FastAPI application that uses an OpenAI reasoning model to plan and execute evidence-driven security assessment steps against explicitly configured lab or owned targets.
+**SecPloit is an autonomous, evidence-driven security research platform for private cyber ranges.**
 
-The agent is autonomous inside its container: it can choose tools, run commands, inspect results, revise its hypothesis, and produce a report without per-command approval. The container and target allowlist remain the hard execution boundary.
+It is not a linear wrapper around Nmap. The control plane uses separate planning, operating,
+review, and reporting passes. Every engagement receives a persistent disposable workspace where the
+agent can write scripts, compile test cases, run security tools, inspect results, revise hypotheses,
+and continue until it has enough evidence.
 
-## Features
+## Implemented
 
-- Persistent multi-step agent loop using the OpenAI Responses API
-- Browser dashboard for starting jobs and reviewing live evidence
-- CLI entry point for terminal workflows
-- SQLite job and event history
-- Per-job workspaces
-- Read-only reconnaissance tool profile
-- Exact or wildcard target allowlisting
-- Command timeouts and output limits
-- Non-root Docker image with dropped Linux capabilities
-- CI tests for scope and command policy
+- Multi-pass LLM workflow: planner, operator, reviewer, final reporter
+- Persistent engagement state, command transcript, findings, and artifacts
+- A general shell inside a per-engagement Kali workspace
+- Docker-isolated workspaces with no host mounts and no public network by default
+- Private range containing OWASP Juice Shop and DVWA
+- Nmap, Nikto, ffuf, Gobuster, SQLMap, Semgrep, GDB, Radare2, Binwalk, Checksec, curl,
+  OpenSSL, DNS utilities, Python, GCC, Git, jq, and netcat
+- Command budgets, output limits, cancellation, workspace lifecycle, and immutable event history
+- Browser dashboard, JSON API, unit tests, and CI
 
 ## Architecture
 
 ```text
-Web UI / CLI
+Browser / API
      |
-FastAPI API
+     v
+SecPloit control plane ----> OpenAI Responses API
      |
-Security agent loop ---- OpenAI Responses API
+     v
+Runner API (Docker SDK)
      |
-Policy validator
-     |
-Subprocess runner inside a disposable, non-root container
-     |
-Configured lab or owned target
+     v
+Per-job Kali workspace ----> internal secploit-range network
+                                |-- juice-shop
+                                `-- dvwa
 ```
 
-## Quick start with Docker
+The workspace has broad command-line autonomy. The hard boundary is infrastructure: it is attached
+only to the internal cyber-range network, receives no host filesystem mounts, runs without Linux
+capabilities, and has CPU, memory, PID, time, and output limits.
+
+## Quick start
+
+Requirements:
+
+- Docker Engine with Compose
+- An OpenAI API key
+- Linux is recommended; rootless Docker or a dedicated lab host is strongly preferred
 
 ```bash
-git clone https://github.com/ChathurangaBW/Automated-Penetration-Testing-Script.git
-cd Automated-Penetration-Testing-Script
+git clone https://github.com/ChathurangaBW/SecPloit.git
+cd SecPloit
 cp .env.example .env
 ```
 
-Edit `.env`:
-
-```dotenv
-OPENAI_API_KEY=your_api_key
-OPENAI_MODEL=gpt-5
-TARGET_ALLOWLIST=localhost,127.0.0.1,*.lab.internal
-```
-
-Start the application:
+Set `OPENAI_API_KEY` and choose a model available to your API account. Then:
 
 ```bash
-docker compose up --build
+docker compose --profile range up --build
 ```
 
 Open `http://localhost:8000`.
 
-## Local development
+Bundled targets:
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.api:app --reload
-```
+- `http://juice-shop:3000`
+- `http://dvwa`
 
-The host must have the command-line tools listed in `COMMAND_ALLOWLIST`. Docker installs the default tool set automatically.
+The runner image is also the workspace image, so the Compose build creates everything needed for
+per-job workspaces.
 
 ## CLI
 
 ```bash
-python scanner.py \
-  --target https://app.lab.internal \
-  --objective "Map the exposed HTTP surface and identify defensible security findings" \
-  --max-steps 12
+secploit   --target http://juice-shop:3000   --objective "Map the attack surface and validate high-confidence web findings"   --steps 20
 ```
 
 ## API
 
-### Create a job
-
 ```bash
-curl -s http://localhost:8000/api/jobs \
-  -H 'content-type: application/json' \
-  -d '{
-    "target": "https://app.lab.internal",
-    "objective": "Assess HTTP, TLS, and exposed services",
-    "max_steps": 12
+curl -sS http://localhost:8000/api/jobs   -H 'content-type: application/json'   -d '{
+    "target": "http://juice-shop:3000",
+    "objective": "Assess authentication and input-handling weaknesses",
+    "max_steps": 20
   }'
 ```
 
-### Read a job
+Important endpoints:
 
-```bash
-curl -s http://localhost:8000/api/jobs/JOB_ID
-```
+- `POST /api/jobs`
+- `GET /api/jobs`
+- `GET /api/jobs/{job_id}`
+- `POST /api/jobs/{job_id}/cancel`
+- `GET /api/jobs/{job_id}/artifacts`
+- `GET /health`
 
-### List jobs
+## Operational boundary
 
-```bash
-curl -s http://localhost:8000/api/jobs
-```
+SecPloit is built for systems you own or are explicitly authorized to test. The default Compose
+topology has no public egress from workspaces. To attach additional lab targets, connect them to the
+`secploit-range` Docker network and add their exact hostnames to `SECPLOIT_TARGET_ALLOWLIST`.
 
-## Target allowlist
+Do not expose the runner API or Docker socket to an untrusted network. For serious use, deploy the
+runner on a separate rootless-Docker host or replace the Docker backend with Firecracker,
+Kubernetes Jobs, or another hardened sandbox.
 
-`TARGET_ALLOWLIST` accepts comma-separated exact hosts and wildcard suffixes:
-
-```dotenv
-TARGET_ALLOWLIST=127.0.0.1,localhost,app.lab.internal,*.range.local
-```
-
-A job is rejected before execution when its host does not match the allowlist. Network commands must also reference the job target literally.
-
-## Default tool profile
-
-The default Docker image includes:
-
-- `curl`
-- `nmap`
-- `dig` and `nslookup`
-- `whois`
-- `openssl`
-- `jq`
-- standard read-only text and filesystem utilities
-
-The default policy blocks shell chaining, command substitution, write-oriented HTTP methods, intrusive Nmap script categories, arbitrary interpreters, persistence tooling, credential attacks, and destructive operations.
-
-`COMMAND_ALLOWLIST` is configurable, but expanding it changes the security properties of the runner.
-
-## Tests
-
-```bash
-pytest -q
-```
-
-## Operational scope
-
-Use this software only for systems you own or are explicitly authorized to assess. Run the application in a dedicated cyber range or isolated assessment environment. Do not mount the Docker socket, host root filesystem, cloud credentials, or production secrets into the container.
+See [Architecture](docs/ARCHITECTURE.md) and [Threat Model](docs/THREAT_MODEL.md).
