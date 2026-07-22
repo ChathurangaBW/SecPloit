@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from openai import OpenAI
@@ -50,7 +49,7 @@ class SecurityAgent:
         self.config = config
         self.policy = Policy(config)
         self.runner = Runner(self.policy, config)
-        self.client = client or OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        self.client = client
 
     def run(self, job_id: str) -> None:
         job = self.store.get_job(job_id)
@@ -58,6 +57,7 @@ class SecurityAgent:
             raise KeyError(f"Unknown job: {job_id}")
 
         try:
+            client = self.client or OpenAI()
             target = self.policy.validate_target(job.target)
             self.store.update_job(job_id, status=JobStatus.running, error=None)
             self.store.add_event(
@@ -84,7 +84,7 @@ class SecurityAgent:
             for step in range(1, job.max_steps + 1):
                 self.store.update_job(job_id, current_step=step)
 
-                response = self.client.responses.create(
+                response = client.responses.create(
                     model=self.config.openai_model,
                     instructions=self._instructions(target.original),
                     input=input_items,
@@ -163,7 +163,7 @@ class SecurityAgent:
                         }
                     )
 
-            final_response = self.client.responses.create(
+            final_response = client.responses.create(
                 model=self.config.openai_model,
                 instructions=(
                     self._instructions(target.original)
