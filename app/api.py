@@ -21,11 +21,10 @@ from app.models import (
     ExperimentLeaseRequest,
     JobCreate,
 )
-from app.orchestrator import Orchestrator, SCOUT_PROFILES
+from app.orchestrator import SCOUT_PROFILES, Orchestrator
 from app.policy import Policy, PolicyError
 from app.runner_client import RunnerClient
 from app.store import Store
-
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"

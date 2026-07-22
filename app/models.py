@@ -188,7 +188,7 @@ class ExperimentCreate(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def unique_dependencies(self) -> "ExperimentCreate":
+    def unique_dependencies(self) -> ExperimentCreate:
         if len(self.parent_ids) != len(set(self.parent_ids)):
             raise ValueError("parent_ids must be unique")
         return self

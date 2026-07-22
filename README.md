@@ -1,57 +1,72 @@
 # SecPloit
 
-**SecPloit is a long-horizon, evidence-driven security research platform for private cyber ranges.**
+[![CI](https://github.com/ChathurangaBW/SecPloit/actions/workflows/ci.yml/badge.svg)](https://github.com/ChathurangaBW/SecPloit/actions/workflows/ci.yml)
+[![QA](https://github.com/ChathurangaBW/SecPloit/actions/workflows/qa.yml/badge.svg)](https://github.com/ChathurangaBW/SecPloit/actions/workflows/qa.yml)
+[![Release](https://github.com/ChathurangaBW/SecPloit/actions/workflows/release.yml/badge.svg)](https://github.com/ChathurangaBW/SecPloit/actions/workflows/release.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-SecPloit v4 combines two execution modes:
+**Long-horizon, evidence-driven security research for isolated and explicitly authorized cyber ranges.**
 
-1. **Autonomous engagements** — parallel specialist planning, a lead planner, an operator, per-step review, final evidence audit, and reporting.
-2. **Research campaigns** — durable experiment graphs that can run for hours or days across multiple capability-specific workers with leases, checkpoints, retries, dependencies, and ground-truth scoring.
+SecPloit combines autonomous assessment agents with a durable campaign engine. It can plan, execute, review, checkpoint, resume, and score research experiments while keeping the execution boundary outside the model.
 
-## SecPloit v4
+> SecPloit is not a universal vulnerability oracle. Findings require reproducible evidence and human review. The default deployment is intentionally restricted to private-range targets.
+
+## Core capabilities
 
 - GPT-5.6 reasoning profiles through `max`, with optional `pro` mode
 - Parallel web, network, code/binary, authentication, strategy, and skeptical-review specialists
-- Persistent Kali workspaces with browser, network, source, and binary tooling
-- Durable campaign and experiment graph stored in SQLite
-- Dependency-aware experiment scheduling
-- Distributed worker leasing with capability routing
-- Per-campaign parallelism limits
-- Checkpoint heartbeats and lease-expiry recovery
-- Retry budgets and deterministic terminal states
-- Ground-truth precision, recall, and F1 scoring
-- Juice Shop and DVWA private-range benchmark scenarios
-- FastAPI, dashboard, CLI, tests, and CI
+- Lead planner, hands-on operator, per-step critic, final evidence auditor, and report writer
+- Persistent Kali workspaces with browser, network, source, compilation, and binary-analysis tooling
+- Durable campaign and experiment dependency graph stored in SQLite
+- Capability-routed distributed worker leases
+- Checkpoint heartbeats, retries, attempt budgets, and lease-expiry recovery
+- Bounded campaign parallelism and deterministic terminal states
+- Ground-truth precision, recall, and F1 evaluation
+- Bundled OWASP Juice Shop and DVWA private-range targets
+- FastAPI control plane, browser dashboard, CLI, tests, Docker QA, releases, and GHCR images
 
 ## Architecture
 
 ```text
                          specialist committee
-               +------------------------------------+
+               +-------------------------------------+
                | web | network | code | auth | critic|
-               +-----------------+------------------+
-                                 |
-                                 v
+               +------------------+------------------+
+                                  |
+                                  v
 Browser / API ---> lead planner ---> operator ---> Kali workspace
-                                      |
-                                      v
-                                evidence reviewer
-                                      |
-                                      v
-                                final report audit
+                                       |                 |
+                                       |                 v
+                                       |          private range targets
+                                       v
+                                 step reviewer
+                                       |
+                                       v
+                               final evidence audit
+                                       |
+                                       v
+                                professional report
 
 Long-horizon campaign control plane
                |
                v
       dependency experiment graph
-       /          |            \
+       /          |             \
  browser worker  fuzz worker   binary worker
-       \          |            /
+       \          |             /
          checkpoints + results
 ```
 
-The single-engagement workflow is optimized for one autonomous assessment. The campaign engine is optimized for resumable research with independent experiments, competing hypotheses, large worker pools, and explicit evidence dependencies.
+The single-engagement workflow is optimized for one autonomous assessment. The campaign engine is optimized for resumable research with competing hypotheses, independent experiments, capability-specific worker pools, and explicit evidence dependencies.
 
 ## Quick start
+
+Requirements:
+
+- Docker Engine and Docker Compose
+- An OpenAI API key
+- Linux recommended; rootless Docker or a dedicated lab host preferred
 
 ```bash
 git clone https://github.com/ChathurangaBW/SecPloit.git
@@ -59,7 +74,7 @@ cd SecPloit
 cp .env.example .env
 ```
 
-Set:
+Set at least:
 
 ```dotenv
 OPENAI_API_KEY=your-key
@@ -71,7 +86,7 @@ OPENAI_CRITIC_REASONING_EFFORT=max
 OPENAI_MAX_OUTPUT_TOKENS=64000
 ```
 
-Start:
+Start the control plane, runner, and bundled range:
 
 ```bash
 docker compose --profile range up --build
@@ -84,7 +99,7 @@ Bundled targets:
 - `http://juice-shop:3000`
 - `http://dvwa`
 
-Inspect active capabilities:
+Inspect the effective configuration:
 
 ```bash
 curl -sS http://localhost:8000/api/capabilities | jq
@@ -130,13 +145,13 @@ ROOT_ID=$(
       "title": "Map application state and routes",
       "kind": "browser",
       "objective": "Collect DOM, route, form, script, and network evidence.",
-      "required_capabilities": ["browser"],
+      "required_capabilities": ["browser", "http"],
       "priority": 100
     }' | jq -r '.experiment.id'
 )
 ```
 
-Create a dependent experiment:
+Create a dependent experiment and activate the campaign:
 
 ```bash
 curl -sS "http://localhost:8000/api/campaigns/${CAMPAIGN_ID}/experiments" \
@@ -144,25 +159,20 @@ curl -sS "http://localhost:8000/api/campaigns/${CAMPAIGN_ID}/experiments" \
   -d "{
     \"title\": \"Validate authorization hypotheses\",
     \"kind\": \"validation\",
-    \"objective\": \"Test evidence-backed authorization hypotheses from route mapping.\",
+    \"objective\": \"Test evidence-backed authorization hypotheses.\",
     \"parent_ids\": [\"${ROOT_ID}\"],
     \"required_capabilities\": [\"browser\", \"http\"],
     \"priority\": 90
   }" | jq
-```
 
-Activate:
-
-```bash
 curl -sS -X POST \
   "http://localhost:8000/api/campaigns/${CAMPAIGN_ID}/activate" | jq
 ```
 
-Lease work to a capability-specific worker:
+Lease work to a matching worker:
 
 ```bash
-curl -sS \
-  "http://localhost:8000/api/campaigns/${CAMPAIGN_ID}/lease" \
+curl -sS "http://localhost:8000/api/campaigns/${CAMPAIGN_ID}/lease" \
   -H 'content-type: application/json' \
   -d '{
     "worker_id": "browser-worker-01",
@@ -171,53 +181,7 @@ curl -sS \
   }' | jq
 ```
 
-Workers send checkpoints:
-
-```bash
-curl -sS \
-  "http://localhost:8000/api/experiments/EXPERIMENT_ID/heartbeat" \
-  -H 'content-type: application/json' \
-  -d '{
-    "worker_id": "browser-worker-01",
-    "lease_seconds": 600,
-    "checkpoint": {
-      "pages_visited": 42,
-      "artifact_index": "/workspace/browser/crawl.json"
-    }
-  }' | jq
-```
-
-Complete an experiment:
-
-```bash
-curl -sS \
-  "http://localhost:8000/api/experiments/EXPERIMENT_ID/complete" \
-  -H 'content-type: application/json' \
-  -d '{
-    "worker_id": "browser-worker-01",
-    "result": {
-      "evidence_artifacts": ["browser/crawl.json"],
-      "summary": "Route and form map completed"
-    }
-  }' | jq
-```
-
-Inspect the experiment graph:
-
-```bash
-curl -sS \
-  "http://localhost:8000/api/campaigns/${CAMPAIGN_ID}/graph" | jq
-```
-
-## Ground-truth scoring
-
-```bash
-curl -sS http://localhost:8000/api/evaluations/ground-truth \
-  -H 'content-type: application/json' \
-  --data @benchmarks/ground_truth_example.json | jq
-```
-
-The evaluator returns true positives, false positives, false negatives, precision, recall, F1, matched findings, missed vulnerabilities, and unmatched observations.
+See [Long-Horizon Research](docs/LONG_HORIZON_RESEARCH.md) for heartbeat, completion, failure, dependency, recovery, and evaluation examples.
 
 ## Browser evidence
 
@@ -232,7 +196,21 @@ secploit-browser crawl http://juice-shop:3000 \
   --out /workspace/browser/crawl
 ```
 
-## Benchmark
+The helper records DOM, links, forms, scripts, response headers, network metadata, screenshots, and crawl indexes in the engagement workspace.
+
+## Evaluation
+
+Operational completion is not proof of vulnerability-discovery quality. Use targets with known ground truth and score observed findings:
+
+```bash
+curl -sS http://localhost:8000/api/evaluations/ground-truth \
+  -H 'content-type: application/json' \
+  --data @benchmarks/ground_truth_example.json | jq
+```
+
+The evaluator reports true positives, false positives, false negatives, precision, recall, F1, matches, misses, and unmatched observations.
+
+Run the bundled operational benchmark:
 
 ```bash
 python benchmarks/run_benchmark.py \
@@ -240,26 +218,78 @@ python benchmarks/run_benchmark.py \
   --output benchmark-results.json
 ```
 
-Operational completion is not sufficient evidence of vulnerability-discovery quality. Use the ground-truth endpoint to calculate detection precision and recall on targets with known vulnerabilities.
+## QA
 
-## Main endpoints
+Local quality checks:
 
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -e '.[dev]'
+ruff check .
+pytest --cov=app --cov=runner --cov-report=term-missing
+python -m compileall -q app runner scripts scanner.py
+```
+
+Full Docker QA:
+
+```bash
+cp .env.example .env
+docker compose build --pull control runner
+docker compose --profile range up -d --no-build
+python scripts/qa_smoke.py --base-url http://127.0.0.1:8000
+docker compose --profile range down --volumes --remove-orphans
+```
+
+The GitHub QA workflow additionally tests Python 3.11 and 3.12, validates source and wheel distributions, checks CLI entry points, validates Compose, builds both Docker images, starts the complete private range, and exercises campaign lifecycle, leases, checkpoints, dependencies, graph APIs, and ground-truth scoring.
+
+## Releases and packages
+
+- [GitHub releases](https://github.com/ChathurangaBW/SecPloit/releases)
+- [Control-plane container](https://github.com/ChathurangaBW/SecPloit/pkgs/container/secploit-control)
+- [Runner container](https://github.com/ChathurangaBW/SecPloit/pkgs/container/secploit-runner)
+
+Versioned images:
+
+```text
+ghcr.io/chathurangabw/secploit-control:4.0.0
+ghcr.io/chathurangabw/secploit-runner:4.0.0
+```
+
+The release contains a Python wheel and source distribution. GHCR packages are built from the tagged source and also receive `latest` tags.
+
+## Main API endpoints
+
+- `GET /health`
 - `GET /api/capabilities`
 - `POST /api/jobs`
 - `GET /api/jobs/{job_id}`
+- `POST /api/jobs/{job_id}/cancel`
 - `POST /api/campaigns`
 - `GET /api/campaigns/{campaign_id}`
 - `GET /api/campaigns/{campaign_id}/graph`
 - `POST /api/campaigns/{campaign_id}/experiments`
 - `POST /api/campaigns/{campaign_id}/activate`
+- `POST /api/campaigns/{campaign_id}/pause`
+- `POST /api/campaigns/{campaign_id}/cancel`
 - `POST /api/campaigns/{campaign_id}/lease`
 - `POST /api/experiments/{experiment_id}/heartbeat`
 - `POST /api/experiments/{experiment_id}/complete`
 - `POST /api/experiments/{experiment_id}/fail`
 - `POST /api/evaluations/ground-truth`
 
-## Boundary
+## Project resources
 
-SecPloit is for systems you own or are explicitly authorized to test. The default range topology has no public egress from research workspaces, no host path mounts, non-root execution, dropped capabilities, and bounded resources.
+- [Architecture](docs/ARCHITECTURE.md)
+- [Long-horizon research](docs/LONG_HORIZON_RESEARCH.md)
+- [Threat model](docs/THREAT_MODEL.md)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Release notes](RELEASE.md)
 
-See [Long-Horizon Research](docs/LONG_HORIZON_RESEARCH.md), [Architecture](docs/ARCHITECTURE.md), and [Threat Model](docs/THREAT_MODEL.md).
+## Security boundary
+
+SecPloit is for systems you own or are explicitly authorized to test. The default range topology has no public egress from research workspaces, no host path mounts, non-root execution, dropped Linux capabilities, bounded resources, and separate evidence review.
+
+Do not expose the runner API or Docker socket to an untrusted network. Do not commit API keys, runner tokens, target credentials, private findings, or proprietary artifacts.

@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a reproducible SecPloit defect
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, credentials, private target data, or undisclosed vulnerability details. Use a private security advisory for security-sensitive reports.
+  - type: input
+    id: version
+    attributes:
+      label: SecPloit version or commit
+      placeholder: v4.0.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Control plane API
+        - Campaign engine
+        - Autonomous engagement
+        - Runner
+        - Browser helper
+        - Docker Compose
+        - Packaging or release
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python, Docker, Compose, deployment topology, and relevant configuration with secrets removed.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest deterministic reproduction.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized logs
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Authorized scope confirmation
+      options:
+        - label: The report does not contain secrets or private vulnerability details.
+          required: true
+        - label: Any assessment activity described occurred in an owned or explicitly authorized environment.
+          required: true

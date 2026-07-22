@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import re
@@ -9,7 +10,6 @@ from typing import Any
 
 import docker
 from docker.errors import NotFound
-
 
 SAFE_JOB = re.compile(r"^job_[a-f0-9]{32}$")
 
@@ -162,10 +162,8 @@ class DockerWorkspaceBackend:
         ]
         container.remove(force=True)
         for name in volume_names:
-            try:
+            with contextlib.suppress(NotFound):
                 self.client.volumes.get(name).remove(force=True)
-            except NotFound:
-                pass
 
     def health(self) -> dict[str, Any]:
         self.client.ping()
