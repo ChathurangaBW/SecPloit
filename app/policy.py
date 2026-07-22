@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
-import os
-import shlex
+import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -17,53 +16,47 @@ class PolicyError(ValueError):
 class ValidatedTarget:
     original: str
     host: str
+    port: int | None
+    scheme: str | None
 
 
 class Policy:
-    NETWORK_COMMANDS = {
-        "curl",
-        "nmap",
-        "dig",
-        "nslookup",
-        "whois",
-        "openssl",
-    }
+    """Infrastructure-backed private-range policy."""
 
-    FORBIDDEN_SHELL_TOKENS = (
-        "\n",
-        "\r",
-        ";",
-        "&&",
-        "||",
-        "`",
-        "$(",
-        "${",
-        "<(",
-        ">(",
-        "\x00",
+    FORBIDDEN_PATTERNS = (
+        r"(?:^|\s)(?:docker|podman|kubectl|ctr|crictl)\b",
+        r"/var/run/docker\.sock",
+        r"(?:^|\s)(?:mount|umount|nsenter|unshare|chroot)\b",
+        r"(?:^|\s)(?:shutdown|reboot|poweroff|halt)\b",
+        r"(?:^|\s)(?:systemctl|service)\b",
+        r"(?:^|\s)(?:iptables|ip6tables|nft)\b",
+        r"(?:^|\s)(?:useradd|adduser|usermod|passwd|visudo)\b",
+        r"(?:^|\s)(?:apt|apt-get|apk|dnf|yum|pacman)\b",
+        r"(?:^|\s)(?:ssh|scp|sftp|rsync)\b",
+        r"169\.254\.169\.254",
+        r"metadata\.google\.internal",
+        r"/proc/(?:1|self)/(?:root|fd|mem)",
+        r"/sys/kernel",
+        r"(?:^|\s)dd\s+if=",
+        r"(?:^|\s)mkfs(?:\.|\s)",
+        r":\(\)\s*\{\s*:\|:&\s*\};:",
     )
 
-    CURL_WRITE_LONG_FLAGS = {
-        "--data",
-        "--data-ascii",
-        "--data-binary",
-        "--data-raw",
-        "--form",
-        "--upload-file",
-    }
-
-    INTRUSIVE_NMAP_TERMS = {
-        "brute",
-        "dos",
-        "exploit",
-        "external",
-        "fuzzer",
-        "intrusive",
-        "malware",
-    }
+    DESTRUCTIVE_PATTERNS = (
+        r"\brm\s+(?:-[^\s]*r[^\s]*f|-[^\s]*f[^\s]*r)\s+/(?:\s|$)",
+        r"\bwipefs\b",
+        r"\bshred\b",
+        r"\bkill\s+-9\s+1\b",
+    )
 
     def __init__(self, config: Settings = settings) -> None:
         self.config = config
+        self._forbidden = [
+            re.compile(pattern, re.IGNORECASE) for pattern in self.FORBIDDEN_PATTERNS
+        ]
+        self._destructive = [
+            re.compile(pattern, re.IGNORECASE) for pattern in self.DESTRUCTIVE_PATTERNS
+        ]
 
     def validate_target(self, target: str) -> ValidatedTarget:
         value = target.strip()
@@ -77,11 +70,34 @@ class Policy:
 
         host = host.lower().rstrip(".")
         if not self._host_is_allowed(host):
-            raise PolicyError(
-                f"Target '{host}' is outside TARGET_ALLOWLIST"
-            )
+            raise PolicyError(f"Target '{host}' is outside SECPLOIT_TARGET_ALLOWLIST")
 
-        return ValidatedTarget(original=value, host=host)
+        if self._is_public_ip(host):
+            raise PolicyError("Public IP targets are disabled in the bundled range profile")
+
+        return ValidatedTarget(
+            original=value,
+            host=host,
+            port=parsed.port,
+            scheme=parsed.scheme or None,
+        )
+
+    def validate_command(self, command: str) -> str:
+        value = command.strip()
+        if not value:
+            raise PolicyError("Command is empty")
+        if "\x00" in value:
+            raise PolicyError("NUL bytes are not allowed")
+        if len(value) > 12000:
+            raise PolicyError("Command exceeds the 12,000 character limit")
+
+        for pattern in self._forbidden:
+            if pattern.search(value):
+                raise PolicyError(f"Host-escape or administration pattern blocked: {pattern.pattern}")
+        for pattern in self._destructive:
+            if pattern.search(value):
+                raise PolicyError(f"Destructive command pattern blocked: {pattern.pattern}")
+        return value
 
     def _host_is_allowed(self, host: str) -> bool:
         for rule in self.config.allowed_targets:
@@ -93,82 +109,15 @@ class Policy:
                 return True
         return False
 
-    def validate_command(self, command: str, target: ValidatedTarget) -> list[str]:
-        if not command.strip():
-            raise PolicyError("Command is empty")
-
-        for token in self.FORBIDDEN_SHELL_TOKENS:
-            if token in command:
-                raise PolicyError(f"Shell construct is not allowed: {token!r}")
-
+    @staticmethod
+    def _is_public_ip(host: str) -> bool:
         try:
-            arguments = shlex.split(command, posix=True)
-        except ValueError as exc:
-            raise PolicyError(f"Invalid command syntax: {exc}") from exc
-
-        if not arguments:
-            raise PolicyError("Command is empty")
-
-        executable = os.path.basename(arguments[0])
-        if executable not in self.config.allowed_commands:
-            raise PolicyError(f"Command '{executable}' is not allowlisted")
-
-        if executable in self.NETWORK_COMMANDS:
-            self._require_target_reference(arguments, target)
-
-        if executable == "curl":
-            self._validate_curl(arguments)
-
-        if executable == "nmap":
-            self._validate_nmap(arguments)
-
-        return arguments
-
-    def _require_target_reference(
-        self,
-        arguments: list[str],
-        target: ValidatedTarget,
-    ) -> None:
-        for argument in arguments[1:]:
-            normalized = argument.strip("[]").rstrip(".")
-
-            if normalized == target.host or normalized.startswith(f"{target.host}:"):
-                return
-
-            if "://" in argument:
-                parsed = urlparse(argument)
-                if parsed.hostname and parsed.hostname.lower().rstrip(".") == target.host:
-                    return
-
-            try:
-                ip = ipaddress.ip_address(normalized)
-                if str(ip) == target.host:
-                    return
-            except ValueError:
-                pass
-
-        raise PolicyError(
-            "Network command must reference the job target literally"
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            return False
+        return not (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
         )
-
-    def _validate_curl(self, arguments: list[str]) -> None:
-        for argument in arguments:
-            lowered = argument.lower()
-            if argument in {"-d", "-F", "-T"} or lowered in self.CURL_WRITE_LONG_FLAGS:
-                raise PolicyError(
-                    f"Write-oriented curl option is blocked: {argument}"
-                )
-
-        for index, argument in enumerate(arguments[:-1]):
-            if argument in {"-X", "--request"}:
-                method = arguments[index + 1].upper()
-                if method not in {"GET", "HEAD", "OPTIONS"}:
-                    raise PolicyError(f"HTTP method is blocked: {method}")
-
-    def _validate_nmap(self, arguments: list[str]) -> None:
-        flattened = " ".join(arguments).lower()
-        for term in self.INTRUSIVE_NMAP_TERMS:
-            if term in flattened:
-                raise PolicyError(
-                    f"Intrusive Nmap script category is blocked: {term}"
-                )

@@ -1,23 +1,74 @@
+name: secploit
+
 services:
-  agent:
-    build: .
-    env_file:
-      - .env
-    ports:
-      - "8000:8000"
-    volumes:
-      - agent-data:/app/data
-    read_only: true
-    tmpfs:
-      - /tmp:size=128m,mode=1777
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    pids_limit: 256
-    mem_limit: 2g
-    cpus: 2.0
+  control:
+    build:
+      context: .
+      dockerfile: Dockerfile.control
+    image: secploit-control:latest
     restart: unless-stopped
+    env_file: .env
+    environment:
+      SECPLOIT_RUNNER_URL: http://runner:9000
+      SECPLOIT_DATABASE_PATH: /data/secploit.sqlite3
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - secploit-data:/data
+    networks:
+      - control
+      - runner-control
+    depends_on:
+      runner:
+        condition: service_healthy
+
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    image: secploit-runner:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SECPLOIT_RANGE_NETWORK: secploit-range
+      SECPLOIT_WORKSPACE_IMAGE: secploit-runner:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - runner-control
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    profiles: ["range"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      range:
+        aliases: ["juice-shop"]
+
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    profiles: ["range"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:80"
+    networks:
+      range:
+        aliases: ["dvwa"]
 
 volumes:
-  agent-data:
+  secploit-data:
+
+networks:
+  control:
+  runner-control:
+    internal: true
+  range:
+    name: secploit-range
+    internal: true

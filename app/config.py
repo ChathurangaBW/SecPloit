@@ -1,49 +1,74 @@
 from __future__ import annotations
 
-from pathlib import Path
+from functools import lru_cache
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Autonomous Security Research Agent"
-    openai_model: str = "gpt-5"
-
-    database_path: Path = Path("data/agent.db")
-    workspace_root: Path = Path("data/workspaces")
-
-    target_allowlist: str = "localhost,127.0.0.1"
-    command_allowlist: str = (
-        "curl,nmap,dig,nslookup,whois,openssl,jq,grep,sed,awk,cat,head,tail,"
-        "ls,find,pwd,mkdir,cp,mv,touch,printf,echo"
-    )
-
-    command_timeout_seconds: int = 120
-    max_output_chars: int = 20_000
-    default_max_steps: int = 12
-    max_max_steps: int = 40
-
     model_config = SettingsConfigDict(
         env_file=".env",
-        env_file_encoding="utf-8",
+        env_prefix="",
+        case_sensitive=False,
         extra="ignore",
     )
+
+    app_name: str = "SecPloit"
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-5.2", alias="OPENAI_MODEL")
+    openai_critic_model: str = Field(default="", alias="OPENAI_CRITIC_MODEL")
+    database_path: str = Field(default="/data/secploit.sqlite3", alias="SECPLOIT_DATABASE_PATH")
+    runner_url: str = Field(default="http://runner:9000", alias="SECPLOIT_RUNNER_URL")
+    runner_token: str = Field(
+        default="change-this-runner-token",
+        alias="SECPLOIT_RUNNER_TOKEN",
+    )
+    target_allowlist: str = Field(
+        default="juice-shop,dvwa,localhost,127.0.0.1",
+        alias="SECPLOIT_TARGET_ALLOWLIST",
+    )
+    max_steps: int = Field(default=30, alias="SECPLOIT_MAX_STEPS", ge=1, le=200)
+    max_wall_seconds: int = Field(
+        default=1800,
+        alias="SECPLOIT_MAX_WALL_SECONDS",
+        ge=60,
+        le=21600,
+    )
+    max_command_seconds: int = Field(
+        default=180,
+        alias="SECPLOIT_MAX_COMMAND_SECONDS",
+        ge=5,
+        le=1800,
+    )
+    max_output_bytes: int = Field(
+        default=120000,
+        alias="SECPLOIT_MAX_OUTPUT_BYTES",
+        ge=4096,
+        le=2_000_000,
+    )
+
+    @field_validator("runner_url")
+    @classmethod
+    def normalize_runner_url(cls, value: str) -> str:
+        return value.rstrip("/")
 
     @property
     def allowed_targets(self) -> tuple[str, ...]:
         return tuple(
-            value.strip().lower().rstrip(".")
-            for value in self.target_allowlist.split(",")
-            if value.strip()
+            item.strip().lower().rstrip(".")
+            for item in self.target_allowlist.split(",")
+            if item.strip()
         )
 
     @property
-    def allowed_commands(self) -> frozenset[str]:
-        return frozenset(
-            value.strip()
-            for value in self.command_allowlist.split(",")
-            if value.strip()
-        )
+    def critic_model(self) -> str:
+        return self.openai_critic_model or self.openai_model
 
 
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

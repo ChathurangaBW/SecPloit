@@ -8,10 +8,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.agent import SecurityAgent
 from app.config import settings
 from app.models import JobCreate
+from app.orchestrator import Orchestrator
 from app.policy import Policy, PolicyError
+from app.runner_client import RunnerClient
 from app.store import Store
 
 
@@ -21,14 +22,11 @@ STATIC_DIR = BASE_DIR / "static"
 store = Store(settings.database_path)
 store.initialize()
 policy = Policy(settings)
-agent = SecurityAgent(store=store, config=settings)
+runner = RunnerClient(settings)
+orchestrator = Orchestrator(store=store, config=settings, runner=runner, policy=policy)
 
-app = FastAPI(
-    title=settings.app_name,
-    version="0.1.0",
-)
+app = FastAPI(title=settings.app_name, version="2.0.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
 _tasks: set[asyncio.Task[None]] = set()
 
 
@@ -38,12 +36,12 @@ def serialize(value: Any) -> Any:
     return value
 
 
-async def execute_job(job_id: str) -> None:
-    await asyncio.to_thread(agent.run, job_id)
+async def run_job(job_id: str) -> None:
+    await asyncio.to_thread(orchestrator.run, job_id)
 
 
-def spawn_job(job_id: str) -> None:
-    task = asyncio.create_task(execute_job(job_id))
+def spawn(job_id: str) -> None:
+    task = asyncio.create_task(run_job(job_id))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
 
@@ -54,24 +52,26 @@ def index() -> FileResponse:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "model": settings.openai_model}
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "version": "2.0.0",
+        "model": settings.openai_model,
+        "runner": settings.runner_url,
+    }
 
 
 @app.post("/api/jobs", status_code=202)
-async def create_job(payload: JobCreate) -> dict[str, Any]:
+def create_job(payload: JobCreate) -> dict[str, Any]:
     try:
         policy.validate_target(payload.target)
     except PolicyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    max_steps = min(payload.max_steps, settings.max_max_steps)
-    job = store.create_job(
-        target=payload.target,
-        objective=payload.objective,
-        max_steps=max_steps,
-    )
-    spawn_job(job.id)
+    max_steps = min(payload.max_steps, settings.max_steps)
+    job = store.create_job(payload.target, payload.objective, max_steps)
+    store.add_event(job.id, 0, "status", "Engagement queued")
+    spawn(job.id)
     return {"job": serialize(job)}
 
 
@@ -85,8 +85,29 @@ def get_job(job_id: str) -> dict[str, Any]:
     job = store.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-
     return {
         "job": serialize(job),
         "events": [serialize(event) for event in store.get_events(job_id)],
+        "findings": [serialize(item) for item in store.get_findings(job_id)],
     }
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict[str, Any]:
+    if store.get_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    orchestrator.cancel(job_id)
+    return {"job": serialize(store.get_job(job_id))}
+
+
+@app.get("/api/jobs/{job_id}/artifacts")
+def list_artifacts(job_id: str) -> dict[str, Any]:
+    job = store.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.workspace_id:
+        return {"artifacts": []}
+    try:
+        return {"artifacts": runner.list_artifacts(job.workspace_id)}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Runner error: {exc}") from exc
