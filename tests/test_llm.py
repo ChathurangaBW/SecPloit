@@ -92,3 +92,26 @@ def test_text_request_uses_critic_effort() -> None:
 
     assert result == "report"
     assert client.responses.calls[0]["reasoning"] == {"effort": "xhigh"}
+
+
+def test_max_reasoning_and_pro_mode_are_sent_together() -> None:
+    config = Settings(
+        OPENAI_API_KEY="test",
+        OPENAI_REASONING_MODE="pro",
+        OPENAI_REASONING_EFFORT="max",
+    )
+    client = FakeClient()
+    llm = OpenAIResponsesLLM(config=config, client=client)
+
+    llm.structured(
+        model="gpt-5.6",
+        role="plan",
+        instructions="Use the quality-first configuration.",
+        payload={},
+        schema=ResultSchema,
+    )
+
+    assert client.responses.calls[0]["reasoning"] == {
+        "effort": "max",
+        "mode": "pro",
+    }
