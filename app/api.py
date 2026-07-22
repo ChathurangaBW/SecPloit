@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.models import JobCreate
-from app.orchestrator import Orchestrator
+from app.orchestrator import Orchestrator, SCOUT_PROFILES
 from app.policy import Policy, PolicyError
 from app.runner_client import RunnerClient
 from app.store import Store
@@ -25,7 +25,7 @@ policy = Policy(settings)
 runner = RunnerClient(settings)
 orchestrator = Orchestrator(store=store, config=settings, runner=runner, policy=policy)
 
-app = FastAPI(title=settings.app_name, version="2.0.0")
+app = FastAPI(title=settings.app_name, version="3.0.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 _tasks: set[asyncio.Task[None]] = set()
 
@@ -55,9 +55,45 @@ def index() -> FileResponse:
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "model": settings.openai_model,
+        "critic_model": settings.critic_model,
+        "reasoning_effort": settings.openai_reasoning_effort,
+        "operator_reasoning_effort": settings.openai_operator_reasoning_effort,
+        "critic_reasoning_effort": settings.openai_critic_reasoning_effort,
+        "planning_agents": settings.planning_agents,
         "runner": settings.runner_url,
+    }
+
+
+@app.get("/api/capabilities")
+def capabilities() -> dict[str, Any]:
+    active_profiles = SCOUT_PROFILES[: settings.planning_agents]
+    return {
+        "version": "3.0.0",
+        "workflow": [
+            "parallel_specialists",
+            "lead_planner",
+            "operator",
+            "step_reviewer",
+            "final_evidence_auditor",
+            "reporter",
+        ],
+        "specialists": [role for role, _ in active_profiles],
+        "reasoning": {
+            "planner_and_specialists": settings.openai_reasoning_effort,
+            "operator": settings.openai_operator_reasoning_effort,
+            "reviewer_auditor_reporter": settings.openai_critic_reasoning_effort,
+            "max_output_tokens": settings.openai_max_output_tokens,
+            "store_responses": settings.openai_store_responses,
+        },
+        "workspace": {
+            "persistent_per_engagement": True,
+            "public_egress": False,
+            "host_path_mounts": False,
+            "browser_evidence": True,
+            "general_shell": True,
+        },
     }
 
 
