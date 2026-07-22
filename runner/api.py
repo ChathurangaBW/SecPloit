@@ -9,7 +9,6 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from runner.docker_backend import DockerWorkspaceBackend
 from runner.models import ExecRequest, WorkspaceCreate
 
-
 TOKEN = os.getenv("SECPLOIT_RUNNER_TOKEN", "change-this-runner-token")
 backend = DockerWorkspaceBackend()
 app = FastAPI(title="SecPloit Runner", version="2.0.0")

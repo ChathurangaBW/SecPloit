@@ -12,7 +12,6 @@ from urllib.parse import urldefrag, urljoin, urlparse
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 
-
 HTTP_SCHEMES = {"http", "https"}
 
 

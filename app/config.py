@@ -6,7 +6,6 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 ReasoningMode = Literal["standard", "pro"]
 

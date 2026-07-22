@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
@@ -17,7 +18,6 @@ from app.models import (
 from app.policy import Policy, PolicyError
 from app.runner_client import RunnerClient
 from app.store import Store
-
 
 SCOUT_BASE_INSTRUCTIONS = """
 You are one specialist in SecPloit's planning committee. The engagement is confined to an isolated,
@@ -483,10 +483,8 @@ class Orchestrator:
     def cancel(self, job_id: str) -> None:
         job = self.store.request_cancel(job_id)
         if job.workspace_id:
-            try:
+            with contextlib.suppress(Exception):
                 self.runner.delete_workspace(job.workspace_id)
-            except Exception:
-                pass
 
     def _fail(self, job_id: str, error: str) -> None:
         self.store.update_job(job_id, status=JobStatus.failed, error=error)

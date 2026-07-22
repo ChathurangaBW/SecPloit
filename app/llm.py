@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from app.config import ReasoningEffort, Settings, settings
 
-
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
@@ -40,7 +39,7 @@ class OpenAIResponsesLLM:
     def __init__(
         self,
         config: Settings = settings,
-        client: "OpenAI | None" = None,
+        client: OpenAI | None = None,
     ) -> None:
         self.config = config
         if client is None:
@@ -106,11 +105,11 @@ class OpenAIResponsesLLM:
             previous_raw = response.output_text.strip()
             try:
                 return schema.model_validate_json(previous_raw)
-            except Exception:
+            except Exception as exc:
                 if attempt == 1:
                     raise RuntimeError(
                         f"{role} returned invalid structured output: {previous_raw[:1000]}"
-                    )
+                    ) from exc
 
         raise RuntimeError(f"{role} did not return structured output")
 

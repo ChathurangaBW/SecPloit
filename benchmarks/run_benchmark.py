@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import time
 from pathlib import Path
 from typing import Any
 
 import httpx
-
 
 TERMINAL_STATES = {"completed", "failed", "cancelled"}
 
@@ -51,10 +51,8 @@ def run_scenario(
             break
         time.sleep(poll_seconds)
     else:
-        try:
+        with contextlib.suppress(httpx.HTTPError):
             client.post(f"{base_url}/api/jobs/{job_id}/cancel").raise_for_status()
-        except httpx.HTTPError:
-            pass
         return {
             "name": scenario["name"],
             "job_id": job_id,
