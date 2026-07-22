@@ -1,0 +1,26 @@
+{
+  "expected": [
+    {
+      "key": "idor",
+      "title": "Insecure direct object reference",
+      "severity": "high",
+      "aliases": ["broken object level authorization", "bola"]
+    },
+    {
+      "key": "stored-xss",
+      "title": "Stored cross-site scripting",
+      "severity": "medium",
+      "aliases": ["persistent xss"]
+    }
+  ],
+  "observed": [
+    {
+      "title": "Broken object level authorization in order API",
+      "severity": "high",
+      "confidence": 0.95,
+      "claim": "A user can access another user's order object.",
+      "evidence": "An authorized range test account retrieved another account's order.",
+      "remediation": "Enforce ownership checks on every object request."
+    }
+  ]
+}
