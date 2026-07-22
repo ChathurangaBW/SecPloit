@@ -6,15 +6,22 @@ The FastAPI control plane owns engagement metadata and the autonomous research l
 receive the Docker socket. It communicates with the runner through a token-authenticated internal
 network.
 
-The LLM workflow has four distinct passes:
+The V3 LLM workflow has six stages:
 
-1. **Planner** — converts the objective into hypotheses and completion criteria.
-2. **Operator** — chooses one concrete shell action at a time.
-3. **Reviewer** — evaluates evidence, records findings, and selects the next focus.
-4. **Reporter** — produces the final evidence-based report.
+1. **Parallel specialist committee** — web, network, code/binary, authentication, strategy, and
+   skeptical-review roles produce independent assessments.
+2. **Lead planner** — synthesizes the specialist assessments into hypotheses, discriminating tests,
+   and completion criteria.
+3. **Operator** — chooses one concrete shell or bounded-browser action at a time.
+4. **Step reviewer** — grades each action and result, suppresses unsupported conclusions, and records
+   evidence-backed candidate findings.
+5. **Final evidence auditor** — accepts, rejects, or qualifies candidate findings after reviewing the
+   complete transcript and artifacts.
+6. **Reporter** — writes the final report while respecting the evidence audit.
 
-This separation is intentional. An operator optimized for forward progress is not trusted to grade
-its own evidence.
+The specialist committee runs concurrently. Its output is advisory and is never treated as evidence.
+The operator is optimized for information gain and progress; separate reviewers grade the evidence.
+All roles can use independently configured reasoning effort, set to `high` by default.
 
 ## Runner
 
@@ -31,7 +38,21 @@ The runner is the only service with Docker Engine access. For each job it create
 - connection only to the internal `secploit-range` network.
 
 The workspace is persistent for the engagement, so the agent can create scripts, compile code, retain
-scanner output, and compare observations across steps.
+scanner and browser output, compare observations across steps, and preserve evidence artifacts.
+
+## Browser evidence subsystem
+
+`secploit-browser` uses headless Chromium through Playwright inside the workspace. It provides:
+
+- single-page evidence snapshots;
+- full-page screenshots;
+- DOM and response-header capture;
+- link, form, script, and network-response inventories;
+- bounded same-origin crawling;
+- HTML and JSON artifact generation.
+
+The crawler does not submit forms. It obeys page, depth, navigation-time, wall-time, and workspace
+resource limits. Public egress remains unavailable at the network layer.
 
 ## Network topology
 
@@ -44,5 +65,13 @@ without changing the orchestrator contract.
 
 ## Data model
 
-SQLite stores jobs, immutable events, reviewer-approved findings, and final reports. Artifacts remain
-in the per-job Docker volume and are indexed through the runner API.
+SQLite stores jobs, immutable events, specialist assessments, plans, command results, step reviews,
+reviewer-approved candidate findings, evidence audits, and final reports. Artifacts remain in the
+per-job Docker volume and are indexed through the runner API.
+
+## Benchmarking
+
+The bundled benchmark runner creates real engagements against Juice Shop and DVWA and records
+completion, commands, specialist passes, reviews, findings, report presence, duration, and errors.
+This tests operational behavior and regression stability; it is not a substitute for human validation
+of vulnerability accuracy.
