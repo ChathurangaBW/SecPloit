@@ -43,15 +43,12 @@ class Policy:
         "\x00",
     )
 
-    CURL_WRITE_FLAGS = {
-        "-d",
+    CURL_WRITE_LONG_FLAGS = {
         "--data",
         "--data-ascii",
         "--data-binary",
         "--data-raw",
-        "-f",
         "--form",
-        "-t",
         "--upload-file",
     }
 
@@ -155,15 +152,16 @@ class Policy:
         )
 
     def _validate_curl(self, arguments: list[str]) -> None:
-        lowered = [argument.lower() for argument in arguments]
+        for argument in arguments:
+            lowered = argument.lower()
+            if argument in {"-d", "-F", "-T"} or lowered in self.CURL_WRITE_LONG_FLAGS:
+                raise PolicyError(
+                    f"Write-oriented curl option is blocked: {argument}"
+                )
 
-        for flag in self.CURL_WRITE_FLAGS:
-            if flag in lowered:
-                raise PolicyError(f"Write-oriented curl option is blocked: {flag}")
-
-        for index, argument in enumerate(lowered[:-1]):
-            if argument in {"-x", "--request"}:
-                method = lowered[index + 1].upper()
+        for index, argument in enumerate(arguments[:-1]):
+            if argument in {"-X", "--request"}:
+                method = arguments[index + 1].upper()
                 if method not in {"GET", "HEAD", "OPTIONS"}:
                     raise PolicyError(f"HTTP method is blocked: {method}")
 
